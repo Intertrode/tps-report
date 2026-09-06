@@ -1,0 +1,22 @@
+version: 2.1
+
+jobs:
+  smoke-test:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Verify Environment & VCS Connection
+          command: |
+            echo "=============================================="
+            echo "CircleCI VCS Connection Verified!"
+            echo "Repository: Fix-the-Glitch-Flows/tps-report"
+            echo "Branch:     ${CIRCLE_BRANCH}"
+            echo "Commit:     ${CIRCLE_SHA1}"
+            echo "==============================================="
+
+workflows:
+  baseline-verification:
+    jobs:
+      - smoke-test
