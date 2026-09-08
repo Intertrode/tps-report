@@ -5,13 +5,17 @@ jobs:
     docker:
       - image: cimg/base:current
     steps:
-      - checkout
+      - run:
+          name: Checkout code
+          command: |
+            git clone --filter=blob:none https://github.com/Intertrode/tps-report.git .
+            git checkout "${CIRCLE_SHA1}"
       - run:
           name: Verify Environment & VCS Connection
           command: |
             echo "=============================================="
             echo "CircleCI VCS Connection Verified!"
-            echo "Repository: Fix-the-Glitch-Flows/tps-report"
+            echo "Repository: Intertrode/tps-report"
             echo "Branch:     ${CIRCLE_BRANCH}"
             echo "Commit:     ${CIRCLE_SHA1}"
             echo "==============================================="
