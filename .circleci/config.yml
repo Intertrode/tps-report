@@ -67,8 +67,66 @@ jobs:
       - store_test_results:
           path: test-results
 
+  build-docker-image:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - run:
+          name: Checkout code
+          command: |
+            git clone --filter=blob:none https://github.com/Intertrode/tps-report.git .
+            git checkout "${CIRCLE_SHA1}"
+      - setup_remote_docker
+      - run:
+          name: Build Docker image
+          command: docker build -t tps-report:${CIRCLE_SHA1} .
+      - run:
+          name: Container smoke test (Postgres + app on a Docker network)
+          command: |
+            docker network create smoke-net
+
+            docker run -d --name pg --network smoke-net \
+              -e POSTGRES_USER=circleci \
+              -e POSTGRES_PASSWORD=circleci \
+              -e POSTGRES_DB=tps_report_smoke \
+              postgres:16
+
+            echo "Waiting for Postgres..."
+            for i in $(seq 1 30); do
+              if docker exec pg pg_isready -U circleci >/dev/null 2>&1; then
+                echo "Postgres ready after ${i}s"
+                break
+              fi
+              sleep 1
+            done
+
+            docker run -d --name app --network smoke-net \
+              -e DB_HOST=pg -e DB_PORT=5432 \
+              -e DB_USER=circleci -e DB_PASSWORD=circleci -e DB_NAME=tps_report_smoke \
+              -e PORT=8080 \
+              tps-report:${CIRCLE_SHA1}
+
+            echo "Waiting for app..."
+            for i in $(seq 1 30); do
+              if docker run --rm --network smoke-net curlimages/curl:latest \
+                   curl -sf http://app:8080/healthz >/dev/null 2>&1; then
+                echo "App healthy after ${i}s:"
+                docker run --rm --network smoke-net curlimages/curl:latest \
+                  curl -sf http://app:8080/healthz
+                exit 0
+              fi
+              sleep 1
+            done
+
+            echo "App did not become healthy in time" >&2
+            docker logs app || true
+            exit 1
+
 workflows:
   baseline-verification:
     jobs:
       - smoke-test
       - test-integration
+      - build-docker-image:
+          requires:
+            - test-integration
