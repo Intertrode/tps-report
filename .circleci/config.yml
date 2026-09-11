@@ -20,7 +20,55 @@ jobs:
             echo "Commit:     ${CIRCLE_SHA1}"
             echo "==============================================="
 
+  test-integration:
+    docker:
+      - image: cimg/go:1.26
+        environment:
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_USER: circleci
+          DB_PASSWORD: circleci
+          DB_NAME: tps_report_test
+      - image: cimg/postgres:16.2
+        environment:
+          POSTGRES_USER: circleci
+          POSTGRES_PASSWORD: circleci
+          POSTGRES_DB: tps_report_test
+    steps:
+      - run:
+          name: Checkout code
+          command: |
+            git clone --filter=blob:none https://github.com/Intertrode/tps-report.git .
+            git checkout "${CIRCLE_SHA1}"
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "src/go.sum" }}
+      - run:
+          name: Download Go modules
+          command: |
+            cd src
+            go mod download
+      - save_cache:
+          key: go-mod-v1-{{ checksum "src/go.sum" }}
+          paths:
+            - /home/circleci/go/pkg/mod
+      - run:
+          name: Wait for Postgres sidecar
+          command: ./scripts/wait_for_db.sh 127.0.0.1 5432 60
+      - run:
+          name: Install gotestsum
+          command: go install gotest.tools/gotestsum@latest
+      - run:
+          name: Run tests with gotestsum
+          command: |
+            mkdir -p test-results/go
+            cd src
+            gotestsum --junitfile ../test-results/go/junit.xml -- -v ./...
+      - store_test_results:
+          path: test-results
+
 workflows:
   baseline-verification:
     jobs:
       - smoke-test
+      - test-integration
