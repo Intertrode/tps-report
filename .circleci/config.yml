@@ -152,8 +152,8 @@ jobs:
           name: Load image built in build-docker-image
           command: docker load -i /tmp/workspace/image.tar
       - aws-cli/setup:
-          role-arn: ${AWS_ROLE_ARN}
-          role-session-name: circleci-tps-report-publish
+          role_arn: ${AWS_ROLE_ARN}
+          role_session_name: circleci-tps-report-publish
       - run:
           name: Push to Amazon ECR via OIDC (no static AWS keys)
           command: |
