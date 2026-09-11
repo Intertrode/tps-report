@@ -1,5 +1,8 @@
 version: 2.1
 
+orbs:
+  aws-cli: circleci/aws-cli@4.1.3
+
 jobs:
   smoke-test:
     docker:
@@ -121,6 +124,49 @@ jobs:
             echo "App did not become healthy in time" >&2
             docker logs app || true
             exit 1
+      - run:
+          name: Save image for publish job
+          command: |
+            mkdir -p /tmp/workspace
+            docker save tps-report:${CIRCLE_SHA1} -o /tmp/workspace/image.tar
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - image.tar
+
+  publish-to-ecr:
+    docker:
+      - image: cimg/base:current
+        environment:
+          AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - run:
+          name: Checkout code
+          command: |
+            git clone --filter=blob:none https://github.com/Intertrode/tps-report.git .
+            git checkout "${CIRCLE_SHA1}"
+      - attach_workspace:
+          at: /tmp/workspace
+      - setup_remote_docker
+      - run:
+          name: Load image built in build-docker-image
+          command: docker load -i /tmp/workspace/image.tar
+      - aws-cli/setup:
+          role-arn: ${AWS_ROLE_ARN}
+          role-session-name: circleci-tps-report-publish
+      - run:
+          name: Push to Amazon ECR via OIDC (no static AWS keys)
+          command: |
+            aws ecr get-login-password --region us-east-1 \
+              | docker login --username AWS --password-stdin 916028337694.dkr.ecr.us-east-1.amazonaws.com
+
+            docker tag tps-report:${CIRCLE_SHA1} \
+              916028337694.dkr.ecr.us-east-1.amazonaws.com/tps-report:${CIRCLE_SHA1}
+            docker tag tps-report:${CIRCLE_SHA1} \
+              916028337694.dkr.ecr.us-east-1.amazonaws.com/tps-report:latest
+
+            docker push 916028337694.dkr.ecr.us-east-1.amazonaws.com/tps-report:${CIRCLE_SHA1}
+            docker push 916028337694.dkr.ecr.us-east-1.amazonaws.com/tps-report:latest
 
 workflows:
   baseline-verification:
@@ -130,3 +176,10 @@ workflows:
       - build-docker-image:
           requires:
             - test-integration
+      - publish-to-ecr:
+          requires:
+            - build-docker-image
+          context: aws-ecr-publish
+          filters:
+            branches:
+              only: main
